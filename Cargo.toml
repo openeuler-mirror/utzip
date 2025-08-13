@@ -1,0 +1,26 @@
+[package]
+name = "utzip"
+version = "0.0.1"
+edition = "2021"
+description = "A ZIP file archiver written in Rust"
+license = "GPL-2.0-or-later"
+
+[dependencies]
+
+
+[[bin]]
+name = "utzip"
+path = "src/main.rs"
+
+[[bin]]
+name = "utzipnote"
+path = "src/bin/zipnote.rs"
+
+[[bin]]
+name = "utzipcloak"
+path = "src/bin/zipcloak.rs"
+
+[[bin]]
+name = "utzipsplit"
+path = "src/bin/zipsplit.rs"
+
