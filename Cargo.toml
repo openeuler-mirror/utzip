@@ -6,7 +6,9 @@ description = "A ZIP file archiver written in Rust"
 license = "GPL-2.0-or-later"
 
 [dependencies]
-
+chrono = "0.4.40"
+clap = { version = "4.5.32", features = ["derive"] }
+regex = "1.11.1"
 
 [[bin]]
 name = "utzip"
