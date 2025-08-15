@@ -238,6 +238,112 @@ pub struct TestOptions {
     pub test_cmd: Option<String>,
 }
 
+#[derive(Debug, Clone, Args, Default)]
+#[group(id = "extractor_options")]
+#[command(next_help_heading = "Self extractor")]
+pub struct ExtractorOptions {
+    /// Adjust self-extracting exe
+    #[arg(short = 'A', long = "adjust-sfx", action = ArgAction::SetTrue)]
+    pub adjust_sfx: bool,
+
+    /// Junk zipfile prefix (unzipsfx)
+    #[arg(short = 'J', long = "junk-sfx", action = ArgAction::SetTrue)]
+    pub junk_sfx: bool,
+}
+
+#[derive(Debug, Clone, Args, Default)]
+#[group(id = "fix_options")]
+#[command(next_help_heading = "Fixing archives")]
+pub struct FixOptions {
+    /// Attempt to fix a mostly intact archive (try this first)
+    #[arg(short = 'F', action = ArgAction::SetTrue, requires="out")]
+    pub fix_normal: bool,
+
+    /// Try to salvage what can (may get more but less reliable)
+    #[arg(long = "FF",action = ArgAction::SetTrue, requires="out")]
+    pub fix_full: bool,
+}
+
+#[derive(Debug, Clone, Args, Default)]
+#[group(id = "translation_options")]
+#[command(next_help_heading = "End Of Line Translation (text files only)")]
+pub struct TranslationOptions {
+    /// Change CR or LF (depending on OS) line end to CR LF (Unix->Win)
+    #[arg(short = 'l', action = ArgAction::SetTrue)]
+    pub convert_lf_to_crlf: bool,
+
+    /// Change CR LF to CR or LF (depending on OS) line end (Win->Unix)
+    #[arg(long = "ll",action = ArgAction::SetTrue)]
+    pub convert_crlf_to_lf: bool,
+}
+
+#[derive(Debug, Clone, Args, Default)]
+#[group(id = "other_options")]
+#[command(next_help_heading = "More options")]
+pub struct OtherOptions {
+    /// Display extended help information
+    #[arg(long = "h2", action = ArgAction::SetTrue)]
+    pub extended_help: bool,
+
+    /// Output to archive
+    #[arg(short = 'O', long = "out", value_name = "OUTPUT")]
+    pub out: Option<PathBuf>,
+
+    /// Recurse current dir and match patterns
+    #[arg(short = 'R', long = "recurse-patterns", action = ArgAction::SetTrue, conflicts_with = "recurse")]
+    pub recurse_patterns: bool,
+
+    /// Do not add directory entries
+    #[arg(short = 'D', long = "no-dir-entries", action = ArgAction::SetTrue)]
+    pub no_dir_entries: bool,
+
+    /// Exclude extra file attributes
+    #[arg(short = 'X', long = "no-extra", action = ArgAction::SetTrue)]
+    pub no_extra: bool,
+
+    /// Store symbolic links as links
+    #[arg(short = 'y', long = "symlinks", action = ArgAction::SetTrue)]
+    pub store_symlinks: bool,
+
+    /// Don't compress these suffixes
+    #[arg(short = 'n', long = "suffixes")]
+    pub dont_compress_suffixes: Option<String>,
+
+    /// Use temporary file path
+    #[arg(short = 'b', long = "temp-path", value_name = "PATH")]
+    pub temp_path: Option<PathBuf>,
+
+    /// Only include files that have changed or are new as compared to the input archive
+    #[arg(long = "dif", action = ArgAction::SetTrue, requires_all = ["zipfile", "files","out"])]
+    pub dif: bool,
+
+    /// Unicode paths allow better conversion of entry names between different character sets
+    #[arg(long = "UN", value_name = "ENCODING", value_parser = clap::builder::PossibleValuesParser::new(["Quit", "Warn", "Ignore","No","Escape","UTF8"]))]
+    pub encode: Option<String>,
+
+    /// Show command line arguments as processed and exit
+    #[arg(long = "sc", action = ArgAction::SetTrue)]
+    pub show_command: bool,
+
+    /// Show debugging as Zip does each step
+    #[arg(long = "sd", action = ArgAction::SetTrue)]
+    pub show_debug: bool,
+    /// Show all available options on this system
+    #[arg(long = "so", action = ArgAction::SetTrue)]
+    pub show_options: bool,
+
+    /// No wildcards (wildcards are like any other character)
+    #[arg(long = "nw", action = ArgAction::SetTrue)]
+    pub no_wildcards: bool,
+    /// Wildcards don't span directory boundaries in paths
+    #[arg(long = "ws", action = ArgAction::SetTrue)]
+    pub no_wildcards_boundary: bool,
+
+    /// Show software license
+    #[arg(short = 'L', long = "license", action = ArgAction::SetTrue)]
+    pub license: bool,
+}
+
 // 解析日期字符串为 NaiveDate 类型, 支持 MMDDYYYY 和 YYYY-MM-DD 格式
 fn parse_date(date_str: &str) -> Result<NaiveDate, String> {
     if date_str.len() == 8 {
