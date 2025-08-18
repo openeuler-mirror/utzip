@@ -344,6 +344,210 @@ pub struct OtherOptions {
     pub license: bool,
 }
 
+#[derive(Debug, Parser, Clone, Default)]
+// #[command(disable_help_flag = true)] // 禁用默认的-h/--help
+#[command(name = "utzip")]
+#[command(about = "A ZIP file archiver written in Rust")]
+
+pub struct ZipArgs {
+    /// Input zip file
+    #[arg(value_name = "ZIPFILE")]
+    pub zipfile: Option<PathBuf>,
+
+    /// Files to process
+    #[arg(value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Basic Mode Options
+    #[command(flatten)]
+    pub basic_mode_options: BasicModeOptions,
+
+    /// basic options
+    #[command(flatten)]
+    pub basic_options: BasicOptions,
+
+    /// compression options
+    #[command(flatten)]
+    pub compression: CompressionOptions,
+
+    /// encryption options
+    #[command(flatten)]
+    pub encryption: EncryptionOptions,
+
+    /// filter options
+    #[command(flatten)]
+    pub filter: FilterOptions,
+
+    /// translation options
+    #[command(flatten)]
+    pub translation: TranslationOptions,
+
+    /// data filter options
+    #[command(flatten)]
+    pub data_filter: DataFilterOptions,
+
+    /// display options
+    #[command(flatten)]
+    pub display: DisplayOptions,
+    /// logging options
+    #[command(flatten)]
+    pub logging: LoggingOptions,
+    /// test options
+    #[command(flatten)]
+    pub test: TestOptions,
+
+    /// split options
+    #[command(flatten)]
+    pub split: SplitOptions,
+    /// show files options
+    #[command(flatten)]
+    pub show: ShowOptions,
+
+    /// extractor options
+    #[command(flatten)]
+    pub extractor: ExtractorOptions,
+    /// fix options
+    #[command(flatten)]
+    pub fix: FixOptions,
+    /// other options
+    #[command(flatten)]
+    pub other: OtherOptions,
+
+    /// Command to execute (internal use)
+    #[arg(skip)]
+    pub command: Command,
+}
+
+#[derive(Debug, Parser, Clone, Default)]
+#[command(name = "utzipnote")]
+#[command(
+    about = r#"Copyright (c) 1990-2008 Info-ZIP - Type 'utzipnote "-L"' for software license."#
+)]
+pub struct ZipNoteArgs {
+    /// Input zip file
+    #[arg(value_name = "ZIPFILE")]
+    pub zipfile: Option<PathBuf>,
+
+    /// Write the zipfile comments from stdin
+    #[arg(short = 'w', long = "write", action = ArgAction::SetTrue)]
+    pub write: bool,
+
+    /// Use "path" for the temporary zip file
+    #[arg(short = 'b', long = "temp-path", value_name = "PATH")]
+    pub temp_path: Option<PathBuf>,
+
+    /// Quiet operation, suppress some informational messages
+    #[arg(short = 'q', long = "quiet", action = ArgAction::SetTrue)]
+    pub quiet: bool,
+
+    /// Show version info
+    #[arg(short = 'v', long = "version", action = ArgAction::SetTrue)]
+    pub version: bool,
+
+    /// Show software license
+    #[arg(short = 'L', long = "license", action = ArgAction::SetTrue)]
+    pub license: bool,
+}
+
+#[derive(Debug, Parser, Clone, Default)]
+#[command(name = "utzipcloak")]
+#[command(
+    about = r#"Copyright (c) 1990-2008 Info-ZIP - Type 'utzipcloak "-L"' for software license."#
+)]
+pub struct ZipCloakArgs {
+    /// Input zip file
+    #[arg(value_name = "ZIPFILE")]
+    pub zipfile: Option<PathBuf>,
+
+    /// Decrypt encrypted entries (copy if given wrong password)
+    #[arg(short = 'd', long = "decrypt", action = ArgAction::SetTrue)]
+    pub decrypt: bool,
+
+    /// Use "path" for the temporary zip file
+    #[arg(short = 'b', long = "temp-path", value_name = "PATH")]
+    pub temp_path: Option<PathBuf>,
+
+    /// Write output to new zip file
+    #[arg(short = 'O', long = "output-file", value_name = "OUTPUT")]
+    pub out: Option<PathBuf>,
+
+    /// Quiet operation, suppress some informational messages
+    #[arg(short = 'q', long = "quiet", action = ArgAction::SetTrue)]
+    pub quiet: bool,
+
+    /// Show version info
+    #[arg(short = 'v', long = "version", action = ArgAction::SetTrue)]
+    pub version: bool,
+
+    /// Show software license
+    #[arg(short = 'L', long = "license", action = ArgAction::SetTrue)]
+    pub license: bool,
+}
+
+#[derive(Debug, Parser, Clone, Default)]
+#[command(name = "utzipsplit")]
+#[command(
+    about = r#"Copyright (c) 1990-2008 Info-ZIP - Type 'utzipsplit "-L"' for software license."#
+)]
+pub struct ZipSplitArgs {
+    /// Input zip file
+    #[arg(value_name = "ZIPFILE")]
+    pub zipfile: Option<PathBuf>,
+
+    /// Report how many files it will take, but don't make them
+    #[arg(short = 't', long = "test", action = ArgAction::SetTrue)]
+    pub test: bool,
+    /// Make index (zipsplit.idx) and count its size against first zip file
+    #[arg(short = 'i', long = "index", action = ArgAction::SetTrue)]
+    pub index: bool,
+    /// Make zip files no larger than "size" (default = 36000)
+    #[arg(
+        short = 'n',
+        long = "max_size",
+        value_name = "SIZE",
+        default_value = "36000"
+    )]
+    pub max_size: u32,
+    /// Leave room for "room" bytes on the first disk (default = 0)
+    #[arg(short = 'r', long = "room", value_name = "ROOM", default_value = "0")]
+    pub room: u32,
+
+    /// Use "path" for the temporary zip file
+    #[arg(short = 'b', long = "temp-path", value_name = "PATH")]
+    pub temp_path: Option<PathBuf>,
+
+    /// Quiet operation, suppress some informational messages
+    #[arg(short = 'q', long = "quiet", action = ArgAction::SetTrue)]
+    pub quiet: bool,
+    /// Pause between output zip files
+    #[arg(short = 'p', long = "pause", action = ArgAction::SetTrue)]
+    pub pause: bool,
+    /// Do a sequential split even if it takes more zip files
+    #[arg(short = 's', long = "sequential", action = ArgAction::SetTrue)]
+    pub sequential: bool,
+
+    /// Show version info
+    #[arg(short = 'v', long = "version", action = ArgAction::SetTrue)]
+    pub version: bool,
+
+    /// Show software license
+    #[arg(short = 'L', long = "license", action = ArgAction::SetTrue)]
+    pub license: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Command {
+    #[default]
+    Add,
+    Delete,
+    Update,
+    Copy,
+    List,
+    Test,
+    Fix,
+    Adjust,
+}
+
 // 解析日期字符串为 NaiveDate 类型, 支持 MMDDYYYY 和 YYYY-MM-DD 格式
 fn parse_date(date_str: &str) -> Result<NaiveDate, String> {
     if date_str.len() == 8 {
