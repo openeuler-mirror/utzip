@@ -548,6 +548,74 @@ pub enum Command {
     Adjust,
 }
 
+pub fn parse_args() -> ZipArgs {
+    let mut args = ZipArgs::parse();
+
+    // 如果设置了show_options参数，显示帮助信息并退出
+    if args.other.show_options {
+        ZipArgs::command().print_help().unwrap();
+        std::process::exit(0);
+    }
+
+    // 如果设置了--h2参数，显示帮助信息并退出（等价于-h）
+    if args.other.extended_help {
+        ZipArgs::command().print_help().unwrap();
+        std::process::exit(0);
+    }
+
+    // 确定要执行的命令
+    if args.basic_mode_options.delete {
+        args.command = Command::Delete;
+    } else if args.show.list || args.show.show_unicode || args.show.show_unicode_only {
+        args.command = Command::List;
+    } else if args.basic_mode_options.update
+        || args.basic_mode_options.filesync
+        || args.basic_mode_options.freshen
+    {
+        //刷新操作是更新的特例 - 只更新已存在于归档中的文件
+        args.command = Command::Update;
+    } else if args.basic_mode_options.copy {
+        args.command = Command::Copy;
+    } else if args.test.test || args.test.test_cmd.is_some() {
+        // -T 参数的特殊逻辑：
+        // 1. 如果有文件参数，则先执行压缩操作，然后执行test
+        // 2. 如果没有文件参数，则只执行test（如果zip文件不存在则报错）
+        if !args.files.is_empty() {
+            // 有文件参数，执行压缩操作 (Add命令会处理-T参数)
+            args.command = Command::Add;
+        } else {
+            // 没有文件参数，只执行test
+            args.command = Command::Test;
+        }
+    } else if args.fix.fix_normal || args.fix.fix_full {
+        args.command = Command::Fix;
+    } else if args.extractor.adjust_sfx || args.extractor.junk_sfx {
+        args.command = Command::Adjust;
+    } else {
+        args.command = Command::Add; // 默认命令
+    }
+
+    // 动态验证 -s 参数的要求
+    if args.split.split_size.is_some() {
+        // 检查ZIP文件是否存在
+        if let Some(zipfile) = &args.zipfile {
+            if zipfile.exists() {
+                // ZIP文件存在，必须提供 --out 参数
+                if args.other.out.is_none() {
+                    eprintln!("zip error: when zip file exists, split option (-s) requires output file (--out)");
+                    std::process::exit(1);
+                }
+            }
+            // ZIP文件不存在时，不要求 --out 参数，可以直接使用原文件名
+        } else {
+            eprintln!("zip error: split option (-s) requires zip file name");
+            std::process::exit(1);
+        }
+    }
+
+    args
+}
+
 // 解析日期字符串为 NaiveDate 类型, 支持 MMDDYYYY 和 YYYY-MM-DD 格式
 fn parse_date(date_str: &str) -> Result<NaiveDate, String> {
     if date_str.len() == 8 {
@@ -580,6 +648,7 @@ fn parse_split_size_arg(s: &str, min_size: u64) -> Result<u64, String> {
         Some("t") => num * 1024 * 1024 * 1024 * 1024,
         _ => unreachable!(),
     };
+
     // 使用传入的min_size参数进行校验
     if size < min_size {
         return Err(format!(
@@ -589,4 +658,22 @@ fn parse_split_size_arg(s: &str, min_size: u64) -> Result<u64, String> {
     }
 
     Ok(size)
+}
+
+// 解析zipnote命令行参数
+#[allow(dead_code)]
+pub fn parse_args_note() -> ZipNoteArgs {
+    ZipNoteArgs::parse()
+}
+
+// 解析zipcloak命令行参数
+#[allow(dead_code)]
+pub fn parse_args_cloak() -> ZipCloakArgs {
+    ZipCloakArgs::parse()
+}
+
+// 解析zipsplit命令行参数
+#[allow(dead_code)]
+pub fn parse_args_split() -> ZipSplitArgs {
+    ZipSplitArgs::parse()
 }
