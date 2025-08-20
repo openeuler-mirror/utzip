@@ -13,6 +13,7 @@ thiserror = "2.0.12"
 env_logger = { version="0.11.6", features = ["color"]}
 log = "0.4.25"
 anyhow = "1.0.95"
+rand = "0.9.0"
 
 [[bin]]
 name = "utzip"

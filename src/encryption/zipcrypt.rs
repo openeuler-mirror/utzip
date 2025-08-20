@@ -212,3 +212,72 @@ static CRCTABLE: [u32; 256] = [
     0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
 ];
+
+pub struct ZipCryptoEncryptor<W: Write> {
+    inner: W,
+    keys: ZipCryptoKeys,
+    crc32: u32,
+    header_written: bool,
+}
+
+impl<W: Write> ZipCryptoEncryptor<W> {
+    pub fn new(inner: W, password: &str, crc32: u32) -> io::Result<Self> {
+        let keys = ZipCryptoKeys::derive(password.as_bytes());
+        Ok(Self {
+            inner,
+            keys,
+            crc32,
+            header_written: false,
+        })
+    }
+
+    fn write_header(&mut self) -> io::Result<()> {
+        if !self.header_written {
+            let mut header = vec![0u8; 12];
+            // 填充随机数据
+            use rand::RngCore;
+            rand::rng().fill_bytes(&mut header[..10]);
+
+            // 设置CRC32验证字节
+            header[11] = (self.crc32 >> 24) as u8;
+
+            // 加密头部
+            for byte in &mut header {
+                *byte = self.keys.encrypt_byte(*byte);
+            }
+
+            self.inner.write_all(&header)?;
+            self.header_written = true;
+        }
+        Ok(())
+    }
+
+    pub fn replace_writer(&mut self, new_writer: W) -> anyhow::Result<()> {
+        // 先刷新当前的writer
+        println!(
+            "Replacing writer, current type: {}",
+            std::any::type_name::<W>()
+        );
+        self.inner.flush()?;
+        self.inner = new_writer;
+        Ok(())
+    }
+}
+
+impl<W: Write> Write for ZipCryptoEncryptor<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write_header()?;
+
+        let mut encrypted = Vec::with_capacity(buf.len());
+        for &byte in buf {
+            encrypted.push(self.keys.encrypt_byte(byte));
+        }
+
+        self.inner.write_all(&encrypted)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
