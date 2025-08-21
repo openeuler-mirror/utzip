@@ -8,6 +8,8 @@ use anyhow::{Context, Result};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
+use crate::zip::CompressionMethod;
+
 // 跨文件系统安全的文件移动函数
 pub fn safe_move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
@@ -75,4 +77,29 @@ pub fn safe_move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<
             }
         }
     }
+}
+
+// 生成类似标准zip工具的随机临时文件名
+fn generate_temp_filename() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // 使用时间戳和进程ID来生成更加随机的文件名
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let pid = std::process::id();
+    let timestamp_part = (now.as_nanos() % 0xFFFFFF) as u32;
+
+    // 生成类似 ziABC123 这样的文件名，类似标准zip工具
+    format!("zi{:06X}", (pid ^ timestamp_part) & 0xFFFFFF)
+}
+
+// 添加新的结构体来跟踪压缩信息
+pub struct FileCompressionTracker {
+    pub original_size: u64,
+    pub compressed_size: u64,
+    pub ratio: f64,
+    pub method: CompressionMethod,
+    #[allow(dead_code)]
+    pub disk_num: u16,
 }

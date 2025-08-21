@@ -7,6 +7,7 @@
 mod cli;
 mod error;
 mod utils;
+mod zip;
 fn main() {
     println!("Hello, world!");
 }
