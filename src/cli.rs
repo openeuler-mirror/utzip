@@ -1033,3 +1033,28 @@ More option highlights (see manual for additional options and details):
     "#
     );
 }
+
+pub fn show_version() {
+    println!("UtZip {} (built with rustc)", env!("CARGO_PKG_VERSION"));
+}
+
+#[allow(dead_code)]
+pub fn show_version_note() {
+    println!("UtZipNote {} (built with rustc)", env!("CARGO_PKG_VERSION"));
+}
+
+#[allow(dead_code)]
+pub fn show_version_cloak() {
+    println!(
+        "UtZipCloak {} (built with rustc)",
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+#[allow(dead_code)]
+pub fn show_version_split() {
+    println!(
+        "UtZipSplit {} (built with rustc)",
+        env!("CARGO_PKG_VERSION")
+    );
+}
