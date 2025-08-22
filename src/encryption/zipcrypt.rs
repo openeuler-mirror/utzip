@@ -353,3 +353,56 @@ impl ZipCryptoDecryptor {
         Ok(result)
     }
 }
+
+// 添加新的公开方法
+#[allow(dead_code)]
+pub fn encrypt_data(data: &[u8], password: &str, crc32: u32) -> std::io::Result<Vec<u8>> {
+    let mut keys = ZipCryptoKeys::derive(password.as_bytes());
+    let mut encrypted = Vec::with_capacity(data.len() + 12);
+
+    // 生成12字节随机头
+    let mut header = [0u8; 12];
+    use rand::RngCore;
+    rand::rng().fill_bytes(&mut header);
+
+    header[11] = (crc32 >> 24) as u8;
+
+    // 加密头
+    for &byte in &header {
+        encrypted.push(keys.encrypt_byte(byte));
+    }
+
+    // 加密数据
+    for &b in data {
+        encrypted.push(keys.encrypt_byte(b));
+    }
+
+    Ok(encrypted)
+}
+
+#[allow(dead_code)]
+pub fn decrypt_data(
+    data: &[u8],
+    password: &str,
+    expected_crc: Option<u32>,
+) -> std::io::Result<Vec<u8>> {
+    let mut keys = ZipCryptoKeys::derive(password.as_bytes());
+    let mut decrypted = Vec::with_capacity(data.len());
+
+    // 解密数据
+    for &byte in data {
+        decrypted.push(keys.decrypt_byte(byte));
+    }
+
+    // 如果有提供CRC校验值，则验证
+    if let Some(crc) = expected_crc {
+        if decrypted.len() >= 12 && (crc >> 24) as u8 != decrypted[11] {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid password or corrupted data",
+            ));
+        }
+    }
+
+    Ok(decrypted)
+}
