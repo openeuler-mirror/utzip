@@ -281,3 +281,75 @@ impl<W: Write> Write for ZipCryptoEncryptor<W> {
         self.inner.flush()
     }
 }
+
+impl<W: Write> ZipCryptoEncryptor<W> {
+    pub fn finish(mut self) -> io::Result<W> {
+        self.flush()?;
+        Ok(self.inner)
+    }
+}
+
+/// 流式ZIP解密器
+#[allow(dead_code)]
+pub struct ZipCryptoDecryptor {
+    keys: ZipCryptoKeys,
+    header_read: bool,
+    expected_crc: u32,
+}
+
+impl ZipCryptoDecryptor {
+    /// 创建新的解密器
+    #[allow(dead_code)]
+    pub fn new(password: &str, expected_crc: u32) -> Self {
+        Self {
+            keys: ZipCryptoKeys::derive(password.as_bytes()),
+            header_read: false,
+            expected_crc,
+        }
+    }
+
+    /// 解密一块数据
+    /// 如果是首次调用,会先处理12字节加密头并验证密码
+    #[allow(dead_code)]
+    pub fn decrypt_chunk(&mut self, data: &[u8]) -> std::io::Result<Vec<u8>> {
+        let mut result = Vec::new();
+
+        if !self.header_read {
+            // 首块数据必须至少包含12字节头
+            if data.len() < 12 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "First chunk too small for header",
+                ));
+            }
+
+            // 解密并验证头部
+            let mut header = [0u8; 12];
+            for i in 0..12 {
+                header[i] = self.keys.decrypt_byte(data[i]);
+            }
+
+            // 验证密码(使用CRC32的高字节)
+            if (self.expected_crc >> 24) as u8 != header[11] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Invalid password",
+                ));
+            }
+
+            self.header_read = true;
+
+            // 解密剩余数据
+            for &byte in &data[12..] {
+                result.push(self.keys.decrypt_byte(byte));
+            }
+        } else {
+            // 非首块,直接解密所有数据
+            for &byte in data {
+                result.push(self.keys.decrypt_byte(byte));
+            }
+        }
+
+        Ok(result)
+    }
+}
