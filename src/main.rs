@@ -5,6 +5,7 @@
  */
 
 mod cli;
+mod encryption;
 mod error;
 mod utils;
 mod zip;

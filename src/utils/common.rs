@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+use crate::cli;
+use crate::utils::logfile::LogFile;
+use crate::zip::{CompressionMethod, FileOptions, ZipArchive, ZipWriter};
 use anyhow::{Context, Result};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-
-use crate::zip::CompressionMethod;
 
 // 跨文件系统安全的文件移动函数
 pub fn safe_move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
@@ -102,4 +103,54 @@ pub struct FileCompressionTracker {
     pub method: CompressionMethod,
     #[allow(dead_code)]
     pub disk_num: u16,
+}
+
+#[derive(Default)]
+pub struct RunState<'a> {
+    pub zip_file: Option<PathBuf>,
+    pub zip_file_tmp: Option<PathBuf>,
+    pub writer: Option<ZipWriter<'a>>,
+    pub archive: Option<ZipArchive>,
+    pub file_options: FileOptions,
+    pub dirs_to_remove: std::collections::HashSet<PathBuf>, // 待删除的目录
+
+    pub total_original_size: u64,
+    pub total_compressed_size: u64,
+    pub total_entries: usize, // 统计文件数量
+
+    pub changed_files: Vec<String>, // 保存已修改的文件列表
+
+    pub update_modify_time: bool, // 是否更新修改时间
+
+    pub testing: bool, // 启用测试模式
+
+    pub verbose: bool,    // 启用详细输出
+    pub quiet: bool,      // 启用安静模式
+    pub show_debug: bool, // 启用调试模式 (--sd)
+
+    output: Option<PathBuf>, // 输出文件路径
+
+    pub log_file: Option<LogFile>, // 日志文件
+
+    // 显示输出控制
+    pub display_bytes: bool,        // --db
+    pub display_count: bool,        // --dc
+    pub display_dots: bool,         // --dd
+    pub display_global_dots: bool,  // --dg
+    pub dot_size: u64,              // --ds
+    pub display_uncompressed: bool, // --du
+    pub display_volume: bool,       // --dv
+
+    pub disk_num: u16,
+    pub changed_files_count: u16,
+    pub changed_files_size: u64,
+    last_changed_file_size: u64,
+    pub changed_files_total_size: u64,
+    pub changed_files_total_count: u16,
+
+    pub args: cli::ZipArgs,
+
+    global_bytes_processed: u64,
+    #[allow(dead_code)]
+    global_dots_shown: u64,
 }
