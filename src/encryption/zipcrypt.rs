@@ -406,3 +406,74 @@ pub fn decrypt_data(
 
     Ok(decrypted)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stream_encrypt() -> io::Result<()> {
+        let password = "test123";
+        let crc32 = 0xAABBCCDD;
+        let data = b"Hello World!";
+
+        // 创建加密器
+        let mut output = Vec::new();
+        let mut encryptor = ZipCryptoEncryptor::new(&mut output, password, crc32)?;
+
+        // 分块写入数据
+        encryptor.write_all(&data[..6])?; // "Hello "
+        encryptor.write_all(&data[6..])?; // "World!"
+        encryptor.finish()?;
+
+        // 验证输出长度 (12字节头 + 12字节数据)
+        assert_eq!(output.len(), 24);
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_encrypt_decrypt() -> io::Result<()> {
+        let password = "test123";
+        let crc32 = 0xAABBCCDD;
+        let data = b"Hello World!";
+
+        // 加密
+        let mut encrypted = Vec::new();
+        {
+            let mut encryptor = ZipCryptoEncryptor::new(&mut encrypted, password, crc32)?;
+            encryptor.write_all(data)?;
+            encryptor.finish()?;
+        }
+
+        // 解密
+        let mut decryptor = ZipCryptoDecryptor::new(password, crc32);
+        let decrypted = decryptor.decrypt_chunk(&encrypted)?;
+
+        // 验证解密结果
+        assert_eq!(&decrypted[..], data); // 跳过12字节头
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrong_password() {
+        let password = "test123";
+        let wrong_password = "wrong";
+        let crc32 = 0xAABBCCDD;
+        let data = b"Hello World!";
+
+        // 加密
+        let mut encrypted = Vec::new();
+        {
+            let mut encryptor = ZipCryptoEncryptor::new(&mut encrypted, password, crc32).unwrap();
+            encryptor.write_all(data).unwrap();
+            encryptor.finish().unwrap();
+        }
+
+        // 用错误密码解密
+        let mut decryptor = ZipCryptoDecryptor::new(wrong_password, crc32);
+        let result = decryptor.decrypt_chunk(&encrypted);
+
+        // 应该返回错误
+        assert!(result.is_err());
+    }
+}
