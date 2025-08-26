@@ -154,3 +154,29 @@ pub struct RunState<'a> {
     #[allow(dead_code)]
     global_dots_shown: u64,
 }
+
+// 定义 trait 来统一不同数据类型的接口
+pub trait SizeProvider {
+    fn get_size(&self) -> u64;
+}
+
+// 为 PathBuf 实现 SizeProvider
+impl SizeProvider for &PathBuf {
+    fn get_size(&self) -> u64 {
+        self.metadata()
+            .map(|m| if self.is_dir() { 0 } else { m.len() })
+            .unwrap_or(0)
+    }
+}
+// 为 u64 实现 SizeProvider
+impl SizeProvider for u32 {
+    fn get_size(&self) -> u64 {
+        *self as u64
+    }
+}
+// 为 u64 实现 SizeProvider
+impl SizeProvider for u64 {
+    fn get_size(&self) -> u64 {
+        *self
+    }
+}
