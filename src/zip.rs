@@ -160,6 +160,19 @@ pub struct ZipArchive {
     base_name: Option<String>, // 基础文件名
 }
 
+impl ZipArchive {
+    pub fn new(path: &str) -> anyhow::Result<Self> {
+        let file = File::open(path)?;
+        Ok(ZipArchive {
+            file,
+            cd_headers: Vec::new(),
+            arhive_info: ArchiveFileInfo::default(),
+            split_files: None,
+            base_name: None,
+        })
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct FileOptions {
     pub compression_method: CompressionMethod, // 压缩方法，8表示DEFLATE
