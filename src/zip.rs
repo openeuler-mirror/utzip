@@ -199,3 +199,37 @@ pub struct FileOptions {
     // 新增：标记压缩级别是否由外部显式指定
     pub compression_level_specified: bool, // 压缩级别是否由外部指定
 }
+
+impl FileOptions {
+    //从实际文件获取权限
+    fn with_file_attrs(&mut self, path: &Path) -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = metadata(path)?;
+        let mode = metadata.permissions().mode();
+
+        // 高16位: Unix属性 (文件类型+权限)
+        // 低16位: DOS属性 (兼容Windows)
+        self.external_attr =
+            ((mode as u32 & 0xFFFF) << 16) | if metadata.is_dir() { 0x10 } else { 0x20 };
+
+        Ok(())
+    }
+
+    // 获取utime时间戳
+    fn set_ut_extra_field(&mut self, file_path: &Path) -> anyhow::Result<()> {
+        let metadata = metadata(file_path)?;
+        let mod_time = metadata
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as u32;
+
+        let mut field = Vec::with_capacity(7);
+        field.extend_from_slice(&0x5455u16.to_le_bytes()); // Header ID
+        field.extend_from_slice(&5u16.to_le_bytes()); // Data Size
+        field.push(0x01); // Flags: modtime present
+        field.extend_from_slice(&(mod_time as u32).to_le_bytes()); // modtime (UTC, u32)
+
+        self.extra_field = field.clone();
+        Ok(())
+    }
+}
