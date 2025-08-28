@@ -286,6 +286,24 @@ pub struct FileOptions {
 }
 
 impl FileOptions {
+    pub fn new() -> Self {
+        Self {
+            compression_method: CompressionMethod::Deflated, // DEFLATE压缩
+            password: None,
+            compression_level: 6, // 默认压缩级别为6
+            modification_time: None,
+            no_compress_extensions: HashSet::from([
+                ".zip".to_string(),
+                ".Z".to_string(),
+                ".zoo".to_string(),
+                ".arc".to_string(),
+                ".arj".to_string(),
+            ]),
+            compression_level_specified: false, // 默认为未指定
+            ..Default::default()
+        }
+    }
+
     //从实际文件获取权限
     fn with_file_attrs(&mut self, path: &Path) -> anyhow::Result<()> {
         use std::os::unix::fs::PermissionsExt;

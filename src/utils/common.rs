@@ -155,6 +155,47 @@ pub struct RunState<'a> {
     global_dots_shown: u64,
 }
 
+// 手动实现Debug，跳过writer和archive字段
+impl<'a> std::fmt::Debug for RunState<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunState")
+            .field("zip_file", &self.zip_file)
+            .field("zip_file_tmp", &self.zip_file_tmp)
+            .field("file_options", &self.file_options)
+            .field("dirs_to_remove", &self.dirs_to_remove)
+            .field("total_original_size", &self.total_original_size)
+            .field("total_compressed_size", &self.total_compressed_size)
+            .field("changed_files", &self.changed_files)
+            .field("update_modify_time", &self.update_modify_time)
+            .field("testing", &self.testing)
+            .field("verbose", &self.verbose)
+            .field("quiet", &self.quiet)
+            .finish()
+    }
+}
+
+impl<'a> RunState<'a> {
+    pub fn new(zipfile: Option<PathBuf>) -> Self {
+        // 初始化RunState
+        let zip_file = zipfile;
+        let zip_file_tmp = None; // 临时文件路径将在init_run_state中根据-b参数设置
+        Self {
+            zip_file,
+            zip_file_tmp,
+            writer: None,
+            archive: None,
+            file_options: FileOptions::new(),
+            dirs_to_remove: std::collections::HashSet::new(),
+            changed_files: Vec::new(),
+            output: None,
+            log_file: None,
+            args: cli::ZipArgs::default(),
+            disk_num: 1,
+            ..Default::default()
+        }
+    }
+}
+
 // 定义 trait 来统一不同数据类型的接口
 pub trait SizeProvider {
     fn get_size(&self) -> u64;
