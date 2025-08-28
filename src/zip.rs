@@ -64,6 +64,91 @@ pub struct Zip64ExtendedInfo {
     pub disk_start_number: Option<u32>,
 }
 
+impl Zip64ExtendedInfo {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // 根据ZIP64规范，extra field的字段顺序必须是固定的
+    // 并且只有当标准字段为最大值时，对应的ZIP64字段才会被写入
+    pub fn to_bytes(
+        &self,
+        uncompressed_max: bool,
+        compressed_max: bool,
+        offset_max: bool,
+    ) -> Vec<u8> {
+        let mut data = Vec::new();
+
+        // 按照ZIP64规范的固定顺序写入字段
+        if uncompressed_max {
+            if let Some(size) = self.uncompressed_size {
+                data.extend_from_slice(&size.to_le_bytes());
+            }
+        }
+        if compressed_max {
+            if let Some(size) = self.compressed_size {
+                data.extend_from_slice(&size.to_le_bytes());
+            }
+        }
+        if offset_max {
+            if let Some(offset) = self.local_header_offset {
+                data.extend_from_slice(&offset.to_le_bytes());
+            }
+        }
+        // 磁盘编号字段（通常不用于单个文件）
+        if let Some(disk) = self.disk_start_number {
+            data.extend_from_slice(&disk.to_le_bytes());
+        }
+
+        data
+    }
+
+    // 向后兼容的方法
+    #[allow(dead_code)]
+    pub fn to_bytes_compat(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+
+        if let Some(size) = self.uncompressed_size {
+            data.extend_from_slice(&size.to_le_bytes());
+        }
+        if let Some(size) = self.compressed_size {
+            data.extend_from_slice(&size.to_le_bytes());
+        }
+        if let Some(offset) = self.local_header_offset {
+            data.extend_from_slice(&offset.to_le_bytes());
+        }
+        if let Some(disk) = self.disk_start_number {
+            data.extend_from_slice(&disk.to_le_bytes());
+        }
+
+        data
+    }
+
+    pub fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
+        let mut info = Self::new();
+        let mut offset = 0;
+        // 根据数据长度确定包含哪些字段
+        if data.len() >= 8 {
+            info.uncompressed_size = Some(u64::from_le_bytes(data[offset..offset + 8].try_into()?));
+            offset += 8;
+        }
+        if data.len() >= 16 {
+            info.compressed_size = Some(u64::from_le_bytes(data[offset..offset + 8].try_into()?));
+            offset += 8;
+        }
+        if data.len() >= 24 {
+            info.local_header_offset =
+                Some(u64::from_le_bytes(data[offset..offset + 8].try_into()?));
+            offset += 8;
+        }
+        if data.len() >= 28 {
+            info.disk_start_number = Some(u32::from_le_bytes(data[offset..offset + 4].try_into()?));
+        }
+
+        Ok(info)
+    }
+}
+
 // 归档文件基本信息结构体
 #[derive(Debug, Default)]
 pub struct ArchiveFileInfo {
