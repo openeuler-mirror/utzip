@@ -194,6 +194,76 @@ impl<'a> RunState<'a> {
             ..Default::default()
         }
     }
+
+    pub fn set_display_info(&mut self, args: &crate::cli::ZipArgs) {
+        self.display_bytes = args.display.display_bytes;
+        self.display_count = args.display.display_count;
+        self.display_dots = args.display.display_dots;
+        self.display_global_dots = args.display.display_dots_global;
+        self.dot_size = args.display.display_dots_size.unwrap_or(0);
+        self.display_uncompressed = args.display.display_uncompressed;
+        self.display_volume = args.display.display_volume;
+        self.show_debug = args.other.show_debug;
+
+        // 如果设置了dot_size但没有显式启用点数显示，则自动启用默认点数显示（与原生zip行为一致）
+        if self.dot_size > 0 && !self.display_dots && !self.display_global_dots {
+            self.display_dots = true;
+        }
+    }
+
+    /// 输出调试信息 (--sd)
+    pub fn debug_print(&self, message: &str) {
+        if self.show_debug {
+            println!("sd: {}", message);
+        }
+    }
+    // 打印操作结束信息, 包含原始大小，压缩大小，压缩方法
+    pub fn print_operation_end_args(
+        &mut self,
+        original_size: u64,
+        compressed_size: u64,
+        method: CompressionMethod,
+    ) {
+        let tracker = FileCompressionTracker {
+            original_size,
+            compressed_size,
+            method,
+            ratio: caculate_ratio(original_size, compressed_size),
+            disk_num: 1,
+        };
+        self.print_operation_end(&tracker);
+    }
+    // 打印操作结束信息
+    pub fn print_operation_end(&mut self, tracker: &FileCompressionTracker) {
+        let origin_size_formt = format!(" ({}) ", format_size(tracker.original_size, 1));
+
+        let size_format = format!(
+            " (in={}) (out={}) ",
+            tracker.original_size, tracker.compressed_size,
+        );
+        let ratio_format = format!(" ({} {:.0}%)", tracker.method, tracker.ratio);
+        if let Some(log_file) = self.log_file.as_mut() {
+            if self.verbose {
+                log_file.write_log(&size_format, None).unwrap();
+            }
+            log_file.write_log(&ratio_format, Some(())).unwrap();
+        }
+        if !self.quiet {
+            if self.display_uncompressed {
+                print!("{}", origin_size_formt);
+            }
+
+            if self.verbose && self.args.command != cli::Command::Delete {
+                print!("{}", size_format);
+            }
+
+            if self.args.command == cli::Command::Delete {
+                println!();
+            } else {
+                println!("{}", ratio_format);
+            }
+        }
+    }
 }
 
 // 定义 trait 来统一不同数据类型的接口
@@ -219,5 +289,36 @@ impl SizeProvider for u32 {
 impl SizeProvider for u64 {
     fn get_size(&self) -> u64 {
         *self
+    }
+}
+
+// 来格式化大小, ext 保留几位小数
+fn format_size(size: u64, ext: u8) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if size >= GB {
+        format!("{:.*}G", ext as usize, size as f64 / GB as f64)
+    } else if size >= MB {
+        format!("{:.*}M", ext as usize, size as f64 / MB as f64)
+    } else if size >= KB {
+        format!("{:.*}K", ext as usize, size as f64 / KB as f64)
+    } else {
+        format!("{}", size)
+    }
+}
+
+// 计算压缩比
+pub fn caculate_ratio(original_size: u64, compressed_size: u64) -> f64 {
+    if original_size > 0 {
+        if compressed_size >= original_size {
+            // 压缩无效或者压缩后反而变大，显示0%（与原生zip一致）
+            0.0
+        } else {
+            (1.0 - (compressed_size as f64 / original_size as f64)) * 100.0
+        }
+    } else {
+        0.0
     }
 }

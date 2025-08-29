@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use crate::encryption::zipcrypt::{ZipCryptoDecryptor, ZipCryptoEncryptor};
 
-// // 压缩方法枚举
+// 压缩方法枚举
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub enum CompressionMethod {
     #[default]
@@ -29,17 +29,6 @@ pub enum CompressionMethod {
     Bzip2 = 12,
 }
 
-// 压缩编码器枚举
-pub enum CompressionEncoder<W: Write + 'static> {
-    Stored(W),
-    Deflate(DeflateEncoder<W>),
-    Bzip2(BzEncoder<W>),
-    // 仅加密（无压缩）
-    Encrypted(ZipCryptoEncryptor<W>),
-    // 压缩+加密
-    DeflateEncrypted(DeflateEncoder<ZipCryptoEncryptor<W>>),
-    Bzip2Encrypted(BzEncoder<ZipCryptoEncryptor<W>>),
-}
 impl CompressionMethod {
     pub fn to_le_bytes(self) -> [u8; 2] {
         (self as u16).to_le_bytes()
@@ -53,6 +42,28 @@ impl CompressionMethod {
             _ => Self::Stored,
         }
     }
+}
+
+impl std::fmt::Display for CompressionMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompressionMethod::Stored => write!(f, "stored"),
+            CompressionMethod::Deflated => write!(f, "deflated"),
+            CompressionMethod::Bzip2 => write!(f, "bzipped"),
+        }
+    }
+}
+
+// 压缩编码器枚举
+pub enum CompressionEncoder<W: Write + 'static> {
+    Stored(W),
+    Deflate(DeflateEncoder<W>),
+    Bzip2(BzEncoder<W>),
+    // 仅加密（无压缩）
+    Encrypted(ZipCryptoEncryptor<W>),
+    // 压缩+加密
+    DeflateEncrypted(DeflateEncoder<ZipCryptoEncryptor<W>>),
+    Bzip2Encrypted(BzEncoder<ZipCryptoEncryptor<W>>),
 }
 
 // ZIP64扩展信息结构

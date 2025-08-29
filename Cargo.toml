@@ -17,6 +17,7 @@ rand = "0.9.0"
 crc32fast = "1.4.2"
 flate2 = "1.1.1"
 bzip2 = "0.5.2"
+filetime = "0.2.25"
 
 [[bin]]
 name = "utzip"
