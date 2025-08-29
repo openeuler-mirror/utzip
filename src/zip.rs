@@ -304,6 +304,39 @@ impl FileOptions {
         }
     }
 
+    // 根据文件大小优化压缩级别（仅在未外部指定时）
+    pub fn optimize_compression_level_for_size(&mut self, file_size: u64) {
+        // 如果压缩级别已经由外部指定，则不进行自动优化
+        if self.compression_level_specified {
+            log::debug!(
+                "Compression level {} was externally specified, skipping optimization for {} bytes file",
+                self.compression_level,
+                file_size
+            );
+            return;
+        }
+
+        let original_level = self.compression_level;
+        self.compression_level = match file_size {
+            0..=100 => 1,        // 极小文件：最低级别，速度优先
+            101..=1024 => 1,     // 小文件：级别1，最佳平衡点
+            1025..=10240 => 2,   // 中小文件：级别2，稍好压缩
+            10241..=102400 => 3, // 中等文件：级别3
+            _ => 6,              // 大文件：标准级别，压缩比优先
+        };
+
+        log::debug!(
+            "Auto-optimized compression level for {} bytes file: {} -> {}",
+            file_size,
+            original_level,
+            self.compression_level
+        );
+    }
+
+    fn with_modification_time(&mut self, time: (u16, u16)) {
+        self.modification_time = Some(time);
+    }
+
     //从实际文件获取权限
     fn with_file_attrs(&mut self, path: &Path) -> anyhow::Result<()> {
         use std::os::unix::fs::PermissionsExt;
