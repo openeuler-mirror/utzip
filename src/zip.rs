@@ -20,6 +20,8 @@ use std::sync::Arc;
 
 use crate::encryption::zipcrypt::{ZipCryptoDecryptor, ZipCryptoEncryptor};
 
+use crate::utils::common::get_file_modification_time;
+
 // 压缩方法枚举
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub enum CompressionMethod {
@@ -269,6 +271,14 @@ impl ZipArchive {
     }
 }
 
+// 新增枚举定义转换类型
+#[derive(Debug, Clone, Copy)]
+pub enum LineEndingConversion {
+    None,
+    LfToCrlf, // Unix -> Windows
+    CrlfToLf, // Windows -> Unix
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct FileOptions {
     pub compression_method: CompressionMethod, // 压缩方法，8表示DEFLATE
@@ -313,6 +323,114 @@ impl FileOptions {
             compression_level_specified: false, // 默认为未指定
             ..Default::default()
         }
+    }
+
+    pub fn set_file_path(&mut self, file_path: &PathBuf) -> anyhow::Result<()> {
+        // 根据传入文件路径设置文件属性
+        // 获取文件修改时间并转换为ZIP格式时间戳
+        let (time, date) = get_file_modification_time(file_path)?;
+        self.with_modification_time((time, date));
+
+        if !self.no_extra_field {
+            self.set_ut_extra_field(file_path)?;
+        }
+        self.with_file_attrs(file_path)?;
+
+        if file_path.is_dir() {
+            self.with_compression(CompressionMethod::Stored);
+        }
+
+        // 检查文件扩展名是否在不压缩列表中
+        let extension = file_path.extension().map_or(String::new(), |e| {
+            let ext = e.to_string_lossy();
+            if ext.starts_with('.') {
+                ext.to_string()
+            } else {
+                format!(".{}", ext)
+            }
+        });
+        log::debug!(
+            "extension: {:?}, no_compress_extensions: {:?}",
+            extension,
+            self.no_compress_extensions
+        );
+        if self.no_compress_extensions.contains(&extension) {
+            self.with_compression(CompressionMethod::Stored);
+        }
+
+        if file_path.is_file() {
+            let metadata = metadata(file_path)?;
+            let file_size = metadata.len();
+            self.uncompress_size = file_size;
+
+            let crc32 = self.caculate_crc32(file_path)?;
+            self.crc32 = crc32;
+
+            // 根据文件大小动态优化压缩级别
+            if self.compression_method == CompressionMethod::Deflated {
+                self.optimize_compression_level_for_size(file_size);
+            }
+
+            log::debug!("File '{}' size: {} bytes", file_path.display(), file_size);
+        }
+
+        Ok(())
+    }
+
+    fn caculate_crc32(&self, file_path: &PathBuf) -> anyhow::Result<u32> {
+        let mut hasher = Hasher::new();
+        let mut file = File::open(file_path)?;
+        let mut buffer = Box::new([0u8; 32 * 1024]); // 32KB buffer
+        loop {
+            let bytes_read = file.read(&mut *buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+        Ok(hasher.finalize())
+    }
+
+    pub fn get_line_ending_conversion(&mut self, is_text: bool) -> LineEndingConversion {
+        if !is_text {
+            return LineEndingConversion::None;
+        }
+        if self.convert_lf_to_crlf {
+            LineEndingConversion::LfToCrlf
+        } else if self.convert_crlf_to_lf {
+            LineEndingConversion::CrlfToLf
+        } else {
+            LineEndingConversion::None
+        }
+    }
+
+    pub fn with_password(&mut self, password: &str) {
+        self.password = Some(password.to_string());
+    }
+
+    #[allow(dead_code)]
+    pub fn with_skip_compression(&mut self, skip: bool) -> &mut Self {
+        self.skip_compression = skip;
+        self
+    }
+
+    pub fn with_compression(&mut self, method: CompressionMethod) {
+        self.compression_method = method;
+
+        // 只有在压缩级别未被外部指定时，才设置默认值
+        if !self.compression_level_specified {
+            if method == CompressionMethod::Stored {
+                self.compression_level = 0; // 如果使用存储方法，则不需要压缩级别
+            } else if method == CompressionMethod::Deflated {
+                self.compression_level = 6; // 默认使用优化的压缩级别
+            } else if method == CompressionMethod::Bzip2 {
+                self.compression_level = 9; // Bzip2默认压缩级别
+            }
+        }
+    }
+    pub fn with_compression_level(&mut self, level: u32) {
+        self.compression_level = level;
+        self.compression_level_specified = true; // 标记为外部指定
     }
 
     // 根据文件大小优化压缩级别（仅在未外部指定时）

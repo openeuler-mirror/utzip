@@ -8,6 +8,7 @@ use crate::cli;
 use crate::utils::logfile::LogFile;
 use crate::zip::{CompressionMethod, FileOptions, ZipArchive, ZipWriter};
 use anyhow::{Context, Result};
+use chrono::{Datelike, Timelike};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
@@ -321,4 +322,24 @@ pub fn caculate_ratio(original_size: u64, compressed_size: u64) -> f64 {
     } else {
         0.0
     }
+}
+
+// 获取文件的修改时间并转换为ZIP格式时间戳
+pub fn get_file_modification_time(file_path: &Path) -> anyhow::Result<(u16, u16)> {
+    let metadata = std::fs::metadata(file_path)?;
+    let modified = metadata.modified()?;
+
+    // 将SystemTime转换为chrono::DateTime
+    let modified = chrono::DateTime::<chrono::Local>::from(modified);
+
+    // 转换为ZIP格式时间戳
+    let time = ((modified.hour() as u16) << 11)    // 小时占5位(11-15)
+             | ((modified.minute() as u16) << 5)   // 分钟占6位(5-10)
+             | ((modified.second() as u16) >> 1); // 秒/2占5位(0-4)
+
+    let date = (((modified.year() - 1980) as u16) << 9)  // 年从1980开始，占7位(9-15)
+             | ((modified.month() as u16) << 5)          // 月占4位(5-8)
+             | (modified.day() as u16); // 日占5位(0-4)
+
+    Ok((time, date))
 }
