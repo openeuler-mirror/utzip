@@ -5,6 +5,7 @@
  */
 
 use bzip2::write::BzEncoder;
+use chrono::{Datelike, Local, TimeZone, Timelike};
 use crc32fast::Hasher;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
@@ -21,6 +22,20 @@ use std::sync::Arc;
 use crate::encryption::zipcrypt::{ZipCryptoDecryptor, ZipCryptoEncryptor};
 
 use crate::utils::common::get_file_modification_time;
+
+pub const ZIP_CRYPTO_FLAG: u16 = 0x1;
+pub const VERSION_MADE: u16 = 0x031E; // 3.0 (Unix)
+pub const VERSION_NEEDED: u16 = 0x0A; // 1.0
+pub const VERSION_NEEDED_ZIP64: u16 = 0x2D; // 4.5 for ZIP64
+
+// ZIP64常量
+pub const ZIP64_VERSION_MADE: u16 = 0x032D; // 4.5 (Unix)
+pub const ZIP64_EXTRA_FIELD_ID: u16 = 0x0001; // ZIP64扩展信息额外字段标识符
+#[allow(dead_code)]
+pub const ZIP64_END_OF_CENTRAL_DIR_SIZE: usize = 56; // ZIP64结束目录记录大小
+pub const ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE: usize = 20; // ZIP64结束目录定位器大小
+pub const MAX_ZIP_SIZE: u32 = 0xFFFFFFFF; // 4GB - 1 (ZIP格式32位限制)
+pub const MAX_ZIP_ENTRIES: u16 = 0xFFFF; // 65535 (ZIP格式16位限制)
 
 // 压缩方法枚举
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
@@ -197,6 +212,49 @@ pub struct CentralDirectoryHeader {
     pub local_header_offset: u32,
     // ZIP64支持
     pub zip64_extended_info: Option<Zip64ExtendedInfo>,
+}
+
+impl CentralDirectoryHeader {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self {
+            version_made: VERSION_MADE,
+            version_needed: VERSION_NEEDED,
+            zip64_extended_info: None,
+            ..Default::default()
+        }
+    }
+
+    pub fn needs_zip64(&self) -> bool {
+        let uncompressed = self.get_uncompressed_size();
+        let compressed = self.get_compressed_size();
+        let offset = self.get_local_header_offset();
+
+        uncompressed > MAX_ZIP_SIZE as u64
+            || compressed > MAX_ZIP_SIZE as u64
+            || offset > MAX_ZIP_SIZE as u64
+    }
+
+    pub fn get_uncompressed_size(&self) -> u64 {
+        self.zip64_extended_info
+            .as_ref()
+            .and_then(|info| info.uncompressed_size)
+            .unwrap_or(self.uncompressed_size as u64)
+    }
+
+    pub fn get_compressed_size(&self) -> u64 {
+        self.zip64_extended_info
+            .as_ref()
+            .and_then(|info| info.compressed_size)
+            .unwrap_or(self.compressed_size as u64)
+    }
+
+    pub fn get_local_header_offset(&self) -> u64 {
+        self.zip64_extended_info
+            .as_ref()
+            .and_then(|info| info.local_header_offset)
+            .unwrap_or(self.local_header_offset as u64)
+    }
 }
 
 struct CurrentFile<W: Write + Seek + 'static> {
@@ -496,5 +554,104 @@ impl FileOptions {
 
         self.extra_field = field.clone();
         Ok(())
+    }
+}
+
+// 新增 ZipFile 结构体
+#[derive(Debug, Clone)]
+pub struct ZipFile {
+    header: CentralDirectoryHeader,
+    #[allow(dead_code)]
+    data_start: u64,
+    data_end: u64,
+    file: Arc<File>,
+}
+
+impl ZipFile {
+    pub fn name(&self) -> String {
+        String::from_utf8_lossy(&self.header.filename).to_string()
+    }
+
+    #[allow(dead_code)]
+    pub fn extra_field(&self) -> &[u8] {
+        &self.header.extra_field
+    }
+
+    #[allow(dead_code)]
+    pub fn header(&self) -> &CentralDirectoryHeader {
+        &self.header
+    }
+    #[allow(dead_code)]
+    pub fn header_mut(&mut self) -> &mut CentralDirectoryHeader {
+        &mut self.header
+    }
+
+    #[allow(dead_code)]
+    pub fn comments(&self) -> String {
+        String::from_utf8_lossy(&self.header.file_comment).to_string()
+    }
+
+    #[allow(dead_code)]
+    pub fn set_comments(&mut self, comment: &str) {
+        self.header.file_comment = comment.as_bytes().to_vec();
+    }
+
+    #[allow(dead_code)]
+    pub fn options(&self) -> FileOptions {
+        let mut file_options = FileOptions::new();
+        file_options.compression_method = self.header.compression;
+        file_options.password = None;
+        file_options.compression_level = match self.header.compression {
+            CompressionMethod::Stored => 0,
+            CompressionMethod::Deflated => 6, // 默认压缩级别
+            CompressionMethod::Bzip2 => 9,    // Bzip2默认压缩级别
+        };
+        file_options.modification_time = Some((self.header.mod_time, self.header.mod_date));
+        file_options.external_attr = self.header.external_attr;
+        file_options.extra_field = self.header.extra_field.clone();
+
+        file_options.compress_size = self.header.compressed_size;
+        file_options.uncompress_size = self.header.uncompressed_size as u64;
+        file_options.crc32 = self.header.crc32;
+
+        file_options
+    }
+
+    #[allow(dead_code)]
+    pub fn is_dir(&self) -> bool {
+        self.header.external_attr & 0x10 != 0
+            || (!self.header.filename.is_empty() && *self.header.filename.last().unwrap() == b'/')
+    }
+
+    pub fn encrypted(&self) -> bool {
+        self.header.flags & ZIP_CRYPTO_FLAG != 0
+    }
+
+    pub fn last_modified(&self) -> anyhow::Result<chrono::DateTime<Local>> {
+        // 解析时间字段 (MS-DOS 时间格式)
+        let time = self.header.mod_time;
+        let hour = ((time >> 11) & 0x1F) as u32;
+        let minute = ((time >> 5) & 0x3F) as u32;
+        let second = (time & 0x1F) as u32 * 2; // MS-DOS 时间存储秒/2
+
+        // 解析日期字段 (MS-DOS 日期格式)
+        let date = self.header.mod_date;
+        let day = (date & 0x1F) as u32;
+        let month = ((date >> 5) & 0xF) as u32;
+        let year = (date >> 9) as u32 + 1980; // MS-DOS 日期从1980年开始
+
+        // 创建日期时间对象
+        Local
+            .with_ymd_and_hms(year as i32, month, day, hour, minute, second)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time in zip header"))
+    }
+
+    pub fn origin_size(&self) -> u64 {
+        self.header.get_uncompressed_size()
+    }
+
+    pub fn compressed_size(&self) -> u64 {
+        self.header.get_compressed_size()
     }
 }
