@@ -9,8 +9,10 @@ use crate::utils::logfile::LogFile;
 use crate::zip::{CompressionMethod, FileOptions, ZipArchive, ZipWriter};
 use anyhow::{Context, Result};
 use chrono::{Datelike, Timelike};
+use log::{debug, warn};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 // 跨文件系统安全的文件移动函数
 pub fn safe_move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
@@ -342,4 +344,96 @@ pub fn get_file_modification_time(file_path: &Path) -> anyhow::Result<(u16, u16)
              | (modified.day() as u16); // 日占5位(0-4)
 
     Ok((time, date))
+}
+
+// 简单的模式匹配函数
+pub fn match_pattern(name: &str, pattern: &str, no_wildcards: bool) -> bool {
+    if no_wildcards {
+        return name == pattern;
+    }
+    // 简单实现，支持 * 和 ? 通配符
+    let pattern = pattern.replace('*', ".*").replace('?', ".");
+    match regex::Regex::new(&format!("^{}$", pattern)) {
+        Ok(regex) => regex.is_match(name),
+        Err(e) => {
+            warn!("Invalid pattern '{}': {}", pattern, e);
+            false
+        }
+    }
+}
+
+/// 根据操作模式应用不同的筛选逻辑
+pub fn apply_filters(name: &str, args: &crate::cli::ZipArgs, is_archive_file: bool) -> bool {
+    // 删除操作只能使用排除筛选
+    if args.command == crate::cli::Command::Delete && !args.filter.include.is_empty() {
+        log::warn!(
+            "The delete operation cannot use the -i option, inclusion filtering has been ignored"
+        );
+    }
+
+    // 内部操作(删除/复制)的筛选逻辑
+    if is_archive_file {
+        // 删除操作只能使用-x
+        if args.command == crate::cli::Command::Delete {
+            return args
+                .filter
+                .exclude
+                .iter()
+                .any(|p| match_pattern(name, p, args.other.no_wildcards));
+        }
+        // 复制操作可以使用-i和-x
+        else if args.command == cli::Command::Copy {
+            let included = args.filter.include.is_empty()
+                || args
+                    .filter
+                    .include
+                    .iter()
+                    .any(|p| match_pattern(name, p, args.other.no_wildcards));
+            let excluded = args
+                .filter
+                .exclude
+                .iter()
+                .any(|p| match_pattern(name, p, args.other.no_wildcards));
+            return included && !excluded;
+        }
+    }
+    // 外部操作(添加/更新)的筛选逻辑
+    else {
+        // 包含逻辑
+        let included = if args.filter.include.is_empty() {
+            true
+        } else {
+            args.filter.include.iter().any(|p| {
+                if args.other.no_wildcards_boundary && (p.contains('*') || p.contains('?')) {
+                    // only match same directory depth as pattern
+                    let pattern_slashes = p.matches('/').count();
+                    let name_slashes = name.matches('/').count();
+                    if name_slashes == pattern_slashes {
+                        match_pattern(name, p, args.other.no_wildcards)
+                    } else {
+                        false
+                    }
+                } else {
+                    match_pattern(name, p, args.other.no_wildcards)
+                }
+            })
+        };
+        // 排除逻辑
+        let excluded = args.filter.exclude.iter().any(|p| {
+            if args.other.no_wildcards_boundary && (p.contains('*') || p.contains('?')) {
+                let pattern_slashes = p.matches('/').count();
+                let name_slashes = name.matches('/').count();
+                if name_slashes == pattern_slashes {
+                    match_pattern(name, p, args.other.no_wildcards)
+                } else {
+                    false
+                }
+            } else {
+                match_pattern(name, p, args.other.no_wildcards)
+            }
+        });
+        return included && !excluded;
+    }
+
+    true
 }
