@@ -71,6 +71,36 @@ impl std::fmt::Display for CompressionMethod {
     }
 }
 
+// ZIP64结束目录记录
+#[derive(Debug, Clone)]
+pub struct Zip64EndOfCentralDir {
+    pub size_of_record: u64,
+    pub version_made: u16,
+    pub version_needed: u16,
+    pub disk_number: u32,
+    pub central_dir_disk: u32,
+    pub entries_on_disk: u64,
+    pub total_entries: u64,
+    pub central_dir_size: u64,
+    pub central_dir_offset: u64,
+}
+
+impl Default for Zip64EndOfCentralDir {
+    fn default() -> Self {
+        Self {
+            size_of_record: 44, // 固定大小（不包括可变长度扩展数据）
+            version_made: ZIP64_VERSION_MADE,
+            version_needed: VERSION_NEEDED_ZIP64,
+            disk_number: 0,
+            central_dir_disk: 0,
+            entries_on_disk: 0,
+            total_entries: 0,
+            central_dir_size: 0,
+            central_dir_offset: 0,
+        }
+    }
+}
+
 // 压缩编码器枚举
 pub enum CompressionEncoder<W: Write + 'static> {
     Stored(W),
@@ -325,6 +355,167 @@ impl ZipArchive {
             arhive_info: ArchiveFileInfo::default(),
             split_files: None,
             base_name: None,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn archive_info(&self) -> &ArchiveFileInfo {
+        &self.arhive_info
+    }
+
+    #[allow(dead_code)]
+    pub fn get_total_size(&self) -> u64 {
+        self.file.metadata().unwrap().len()
+    }
+
+    pub fn get_total_original_size(&self) -> u64 {
+        self.cd_headers
+            .iter()
+            .map(|header| header.uncompressed_size as u64)
+            .sum()
+    }
+    pub fn get_total_compressed_size(&self) -> u64 {
+        self.cd_headers
+            .iter()
+            .map(|header| header.compressed_size as u64)
+            .sum()
+    }
+
+    // 读取ZIP64信息
+    fn read_zip64_info(
+        file: &mut File,
+        end_record_pos: u64,
+    ) -> anyhow::Result<Zip64EndOfCentralDir> {
+        // 检查ZIP64结束目录定位器
+        if end_record_pos < ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE as u64 {
+            return Err(anyhow::anyhow!("File too small for ZIP64 locator"));
+        }
+
+        let locator_pos = end_record_pos - ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE as u64;
+        file.seek(io::SeekFrom::Start(locator_pos))?;
+
+        // 读取ZIP64结束目录定位器签名
+        let mut signature = [0u8; 4];
+        file.read_exact(&mut signature)?;
+        if signature != [0x50, 0x4B, 0x06, 0x07] {
+            return Err(anyhow::anyhow!("ZIP64 locator signature not found"));
+        }
+
+        // 读取定位器数据
+        let mut locator_data = [0u8; 16];
+        file.read_exact(&mut locator_data)?;
+
+        let _central_dir_disk = u32::from_le_bytes([
+            locator_data[0],
+            locator_data[1],
+            locator_data[2],
+            locator_data[3],
+        ]);
+        let zip64_end_offset = u64::from_le_bytes([
+            locator_data[4],
+            locator_data[5],
+            locator_data[6],
+            locator_data[7],
+            locator_data[8],
+            locator_data[9],
+            locator_data[10],
+            locator_data[11],
+        ]);
+        let _total_disks = u32::from_le_bytes([
+            locator_data[12],
+            locator_data[13],
+            locator_data[14],
+            locator_data[15],
+        ]);
+
+        // 读取ZIP64结束目录记录
+        file.seek(io::SeekFrom::Start(zip64_end_offset))?;
+
+        // 读取ZIP64结束目录记录签名
+        file.read_exact(&mut signature)?;
+        if signature != [0x50, 0x4B, 0x06, 0x06] {
+            return Err(anyhow::anyhow!("ZIP64 end record signature not found"));
+        }
+
+        // 读取ZIP64结束目录记录
+        let mut record_data = [0u8; 52]; // 不包括签名的记录大小
+        file.read_exact(&mut record_data)?;
+
+        let size_of_record = u64::from_le_bytes([
+            record_data[0],
+            record_data[1],
+            record_data[2],
+            record_data[3],
+            record_data[4],
+            record_data[5],
+            record_data[6],
+            record_data[7],
+        ]);
+        let version_made = u16::from_le_bytes([record_data[8], record_data[9]]);
+        let version_needed = u16::from_le_bytes([record_data[10], record_data[11]]);
+        let disk_number = u32::from_le_bytes([
+            record_data[12],
+            record_data[13],
+            record_data[14],
+            record_data[15],
+        ]);
+        let central_dir_disk_num = u32::from_le_bytes([
+            record_data[16],
+            record_data[17],
+            record_data[18],
+            record_data[19],
+        ]);
+        let entries_on_disk = u64::from_le_bytes([
+            record_data[20],
+            record_data[21],
+            record_data[22],
+            record_data[23],
+            record_data[24],
+            record_data[25],
+            record_data[26],
+            record_data[27],
+        ]);
+        let total_entries = u64::from_le_bytes([
+            record_data[28],
+            record_data[29],
+            record_data[30],
+            record_data[31],
+            record_data[32],
+            record_data[33],
+            record_data[34],
+            record_data[35],
+        ]);
+        let central_dir_size = u64::from_le_bytes([
+            record_data[36],
+            record_data[37],
+            record_data[38],
+            record_data[39],
+            record_data[40],
+            record_data[41],
+            record_data[42],
+            record_data[43],
+        ]);
+        let central_dir_offset = u64::from_le_bytes([
+            record_data[44],
+            record_data[45],
+            record_data[46],
+            record_data[47],
+            record_data[48],
+            record_data[49],
+            record_data[50],
+            record_data[51],
+        ]);
+
+        Ok(Zip64EndOfCentralDir {
+            size_of_record,
+            version_made,
+            version_needed,
+            disk_number,
+            central_dir_disk: central_dir_disk_num,
+            entries_on_disk,
+            total_entries,
+            central_dir_size,
+            central_dir_offset,
         })
     }
 }
