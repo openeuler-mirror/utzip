@@ -437,3 +437,129 @@ pub fn apply_filters(name: &str, args: &crate::cli::ZipArgs, is_archive_file: bo
 
     true
 }
+
+// 筛选输入的文件
+pub fn filter_filesystem_files(
+    file_selects: &std::collections::BTreeMap<String, PathBuf>,
+    args: &crate::cli::ZipArgs,
+) -> std::collections::BTreeMap<String, PathBuf> {
+    let mut filtered_files = std::collections::BTreeMap::new();
+
+    for (name, path) in file_selects {
+        // 对于zip条目路径，跳过日期过滤
+        let path_str = path.to_string_lossy();
+        if path_str.starts_with("__ZIP_ENTRY__:") {
+            // zip条目直接包含，不进行文件系统相关的过滤
+            filtered_files.insert(name.clone(), path.clone());
+            continue;
+        }
+
+        if !should_include_file(name, path, args) {
+            log::debug!("skipping: {}", name);
+            continue;
+        }
+
+        if should_log_inclusion(args) {
+            println!("including: {}", name);
+        }
+        filtered_files.insert(name.clone(), path.clone());
+    }
+    filtered_files
+}
+
+fn should_include_file(name: &str, path: &Path, args: &crate::cli::ZipArgs) -> bool {
+    // 文件名筛选
+    if !apply_filters(name, args, false) {
+        if should_log_exclusion(args) {
+            println!("excluding: {}", name);
+        }
+        return false;
+    }
+
+    // 日期筛选
+    let modified = match get_file_modification_date(path) {
+        Some(date) => date,
+        None => return false, // 无法获取修改时间的文件排除
+    };
+
+    match (&args.data_filter.after_date, &args.data_filter.before_date) {
+        (Some(after), None) => check_after_date(name, modified, after, args),
+        (None, Some(before)) => check_before_date(name, modified, before, args),
+        (Some(after), Some(before)) => check_date_range(name, modified, after, before, args),
+        (None, None) => true, // 没有日期限制
+    }
+}
+
+fn log_exclusion(name: &str, reason: &str, args: &crate::cli::ZipArgs) {
+    if !args.basic_options.quiet && args.basic_options.verbose {
+        println!("zip diagnostic: {} {}", name, reason);
+    }
+}
+
+fn should_log_inclusion(args: &crate::cli::ZipArgs) -> bool {
+    !args.basic_options.quiet
+        && args.basic_options.verbose
+        && (!args.filter.exclude.is_empty() || !args.filter.include.is_empty())
+}
+
+fn should_log_exclusion(args: &crate::cli::ZipArgs) -> bool {
+    !args.basic_options.quiet
+        && args.basic_options.verbose
+        && (!args.filter.exclude.is_empty() || !args.filter.include.is_empty())
+}
+
+fn get_file_modification_date(path: &Path) -> Option<chrono::NaiveDate> {
+    path.metadata()
+        .and_then(|m| m.modified())
+        .map(|t| chrono::DateTime::<chrono::Local>::from(t).date_naive())
+        .ok()
+}
+
+fn check_after_date(
+    name: &str,
+    modified: chrono::NaiveDate,
+    after: &chrono::NaiveDate,
+    args: &crate::cli::ZipArgs,
+) -> bool {
+    if modified < *after {
+        log_exclusion(name, "missing or early", args);
+        false
+    } else {
+        true
+    }
+}
+
+fn check_before_date(
+    name: &str,
+    modified: chrono::NaiveDate,
+    before: &chrono::NaiveDate,
+    args: &crate::cli::ZipArgs,
+) -> bool {
+    if modified >= *before {
+        log_exclusion(name, "missing or early", args);
+        false
+    } else {
+        true
+    }
+}
+
+fn check_date_range(
+    name: &str,
+    modified: chrono::NaiveDate,
+    after: &chrono::NaiveDate,
+    before: &chrono::NaiveDate,
+    args: &crate::cli::ZipArgs,
+) -> bool {
+    if modified < *after || modified >= *before {
+        log::debug!(
+            "zip diagnostic: {} not in range [{}, {})",
+            name,
+            after,
+            before
+        );
+        log_exclusion(name, "missing or early", args);
+        false
+    } else {
+        true
+    }
+}
