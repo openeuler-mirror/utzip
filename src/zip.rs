@@ -518,6 +518,39 @@ impl ZipArchive {
             central_dir_offset,
         })
     }
+
+    pub fn by_index_raw(&self, index: usize) -> anyhow::Result<ZipFile> {
+        if index >= self.cd_headers.len() {
+            return Err(anyhow::anyhow!("索引超出范围"));
+        }
+
+        self.get_zip_file(&self.cd_headers[index])
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.cd_headers.len()
+    }
+
+    // 新增方法获取完整的ZipFile对象
+    fn get_zip_file(&self, header: &CentralDirectoryHeader) -> anyhow::Result<ZipFile> {
+        // 使用ZIP64信息（如果可用）
+        let local_header_offset = header.get_local_header_offset();
+        let compressed_size = header.get_compressed_size();
+
+        // 读取整个条目数据(包括本地文件头和数据)
+        // 30 = 本地文件头固定部分大小(签名4 + 版本2 + 标志2 + 压缩方法2 + 时间2 + 日期2 + CRC4 + 压缩大小4 + 未压缩大小4 + 文件名长度2 + 额外字段长度2)
+        let local_header_size = 30 + header.filename.len() as u64 + header.extra_field.len() as u64;
+
+        let total_size = local_header_size + compressed_size;
+
+        Ok(ZipFile {
+            header: header.clone(),
+            data_start: local_header_offset + local_header_size,
+            data_end: local_header_offset + total_size,
+            file: self.file.try_clone()?.into(),
+        })
+    }
 }
 
 // 新增枚举定义转换类型
