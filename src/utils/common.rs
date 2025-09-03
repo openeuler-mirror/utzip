@@ -563,3 +563,64 @@ fn check_date_range(
         true
     }
 }
+
+// 在zip归档中搜索匹配模式的条目
+pub fn search_pattern_in_archive(
+    run_state: &mut RunState,
+    pattern: &str,
+    args: &crate::cli::ZipArgs,
+) -> Result<std::collections::BTreeMap<String, PathBuf>> {
+    debug!("Searching pattern in archive: {}", pattern);
+    let mut matched_files = std::collections::BTreeMap::new();
+
+    if let Some(archive) = run_state.archive.as_ref() {
+        // 构建正则表达式模式
+        let regex_pattern = if args.other.no_wildcards_boundary {
+            // 不跨目录边界：将*替换为[^/]*
+            pattern.replace('*', "[^/]*").replace('?', "[^/]")
+        } else {
+            // 跨目录边界：原生zip的行为是*可以匹配任何字符包括/
+            pattern.replace('*', ".*").replace('?', ".")
+        };
+
+        let regex = regex::Regex::new(&format!("^{}$", regex_pattern))?;
+
+        // 在zip文件的现有条目中搜索匹配的模式
+        for i in 0..archive.len() {
+            let file = archive.by_index_raw(i)?;
+            let name = file.name().to_string();
+
+            if regex.is_match(&name) {
+                debug!("Found matching entry in archive: {}", name);
+
+                // 检查文件系统中是否存在对应的文件
+                if std::path::Path::new(&name).exists() {
+                    // 只有文件系统中也存在的文件才会被处理，符合原生zip的行为
+                    matched_files.insert(
+                        name.clone(),
+                        PathBuf::from(format!("__ZIP_ENTRY__:{}", name)),
+                    );
+                } else {
+                    debug!(
+                        "File {} exists in archive but not in filesystem, skipping",
+                        name
+                    );
+                }
+            }
+        }
+    }
+
+    // 如果没有匹配到任何条目，显示警告
+    if matched_files.is_empty() {
+        if !args.basic_options.quiet {
+            println!("        utzip warning: name not matched: {}", pattern);
+        }
+    } else {
+        debug!(
+            "Found {} matching entries that exist in both archive and filesystem",
+            matched_files.len()
+        );
+    }
+
+    Ok(matched_files)
+}
